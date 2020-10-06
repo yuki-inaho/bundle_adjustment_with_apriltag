@@ -1,0 +1,4 @@
+numpy==1.16.0
+cython==0.29.20
+pkgconfig==1.5.1
+pytz==2020.1

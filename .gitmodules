@@ -1,0 +1,6 @@
+[submodule "apriltag_detector_pywrapper"]
+	path = apriltag_detector_pywrapper
+	url = https://github.com/teaminaho/apriltag_detector_pywrapper.git
+[submodule "g2opy"]
+	path = g2opy
+	url = https://github.com/uoip/g2opy.git
