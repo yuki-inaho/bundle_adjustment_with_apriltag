@@ -1,2 +1,4 @@
 data/
+detected/
 .vscode/
+scripts/__pycache__/
