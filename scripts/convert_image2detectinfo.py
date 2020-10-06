@@ -3,8 +3,8 @@ import argparse
 from pathlib import Path
 import toml
 
-from camera_parameter import CameraParam
 from april_detector import get_detector_module
+from utils import set_camera_parameter
 import cv2
 import numpy as np
 import pdb
@@ -28,14 +28,6 @@ def parse_args():
     output_dir = args.output_dir
     tag_size = args.tag_size
     return cfg_file_path, input_dir, output_dir, tag_size
-
-def set_camera_parameter(toml_dict):
-    camera_param = CameraParam()
-    intrinsics = [toml_dict["Camera0_Factory"][elem] for elem in ["fx", "fy", "cx", "cy"]]
-    camera_param.set_intrinsic_parameter(*intrinsics)
-    image_size = [toml_dict["Camera0"][elem] for elem in ["width", "height"]]
-    camera_param.set_image_size(*image_size)
-    return camera_param
 
 def read_and_detect(image_path_str, detector):
     image = cv2.imread(image_path_str)

@@ -4,3 +4,4 @@ cython==0.29.20
 pkgconfig==1.5.1
 pytz==2020.1
 toml==0.10.1
+ipython==7.16.1
