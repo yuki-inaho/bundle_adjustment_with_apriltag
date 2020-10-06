@@ -1,6 +1,7 @@
 import toml
 import g2o
 import numpy as np
+from typing import List
 from collections import defaultdict
 from utils import set_camera_parameter
 from pathlib import Path
@@ -24,6 +25,11 @@ def parse_args():
     return args
 
 
+def get_visible_marker_id_list(marker_list_each_frame):
+    marker_id_list = [marker.id  for marker_list in marker_list_each_frame for marker in marker_list]
+    return np.unique(marker_id_list)
+
+
 def initialize_camera_pose(optimizer, num_pose):
     poses = []
     for i in range(num_pose):
@@ -34,7 +40,7 @@ def initialize_camera_pose(optimizer, num_pose):
         v_se3 = g2o.VertexSE3Expmap()
         v_se3.set_id(i)
         v_se3.set_estimate(pose)
-        if i < 2:
+        if i == 0:
             v_se3.set_fixed(True)
         optimizer.add_vertex(v_se3)
     return poses
@@ -53,6 +59,27 @@ class DetectedMarker:
         return self._translation
 
 
+class DetectedMarkerEachFrame:
+    def __init__(self, marker_list: List[DetectedMarker]):
+        self._setting(marker_list)
+
+    def _setting(self, marker_list):
+        self._visible_frame = []
+        self._translation_each_frame = []
+        for marker in marker_list:
+            self._visible_frame.append(marker.id)
+            self._translation_each_frame.append(marker.translation)
+
+    @property
+    def visible_frame(self):
+        return self._visible_frame
+
+    @property
+    def translation_each_frame(self):
+        return self._translation_each_frame
+
+
+
 def generate_detection_result_list(detection_result_path_str_list):
     marker_list_each_frame = []
     for detection_result_path_str in detection_result_path_str_list:
@@ -65,6 +92,26 @@ def generate_detection_result_list(detection_result_path_str_list):
         marker_list_each_frame.append(marker_list)
     return marker_list_each_frame
 
+class MarkerBucket:
+    def __init__(self, marker_list_each_frame, visible_marker_id_list):
+        self._visible_marker_id_list = np.sort(visible_marker_id_list)
+        self._visible_frame_and_translation_per_marker = {}
+        self._setting(marker_list_each_frame)
+
+    def _setting(self, marker_list_each_frame):
+        self._marker_bucket = [[] for _ in self._visible_marker_id_list]
+        self._visible_frame_and_translation_per_marker = {}
+        for marker_id in self._visible_marker_id_list:
+            self._visible_frame_and_translation_per_marker[marker_id] = []
+
+        for frame_id, marker_list in enumerate(marker_list_each_frame):
+            for marker in marker_list:
+                self._visible_frame_and_translation_per_marker[marker.id].append((frame_id, marker.translation))
+
+    def get_frame_id_and_translation_by_id(self, marker_id):
+        return self._visible_frame_and_translation_per_marker[marker_id]
+
+
 def main(use_robust_kernel, use_dense, cfg_file_path, output_dir):
     toml_dict = toml.load(open(cfg_file_path))
     camera_param = set_camera_parameter(toml_dict)
@@ -76,12 +123,17 @@ def main(use_robust_kernel, use_dense, cfg_file_path, output_dir):
 
     focal_length = (camera_param.fx + camera_param.fy)/2
     principal_point = (camera_param.cx, camera_param.cy)
+    image_size = camera_param.image_size
     cam = g2o.CameraParameters(focal_length, principal_point, 0)
     cam.set_id(0)
     optimizer.add_parameter(cam)
 
     detection_result_path_str_list = [str(pt) for pt in list(Path(output_dir).glob("*.csv"))]
     marker_list_each_frame = generate_detection_result_list(detection_result_path_str_list)
+    visible_marker_id_list = get_visible_marker_id_list(marker_list_each_frame)
+
+    n_visible_marker = len(visible_marker_id_list)
+    marker_bucket = MarkerBucket(marker_list_each_frame, visible_marker_id_list)
 
     num_pose = len(marker_list_each_frame)
     poses = initialize_camera_pose(optimizer, num_pose)
@@ -89,45 +141,41 @@ def main(use_robust_kernel, use_dense, cfg_file_path, output_dir):
     inliers = dict()
     sse = defaultdict(float)
 
-    for i, marker_list in enumerate(marker_list_each_frame):
-        visible = []
-        for j, marker in enumerate(poses):
-            z = cam.cam_map(pose * marker.translation)
-            if 0 <= z[0] < 640 and 0 <= z[1] < 480:
-                visible.append((j, z))
-        if len(visible) < 2:
-            continue
+    def get_mean_marker_position(frame_and_translation_tuple_list):
+        marker_translation_list = [_tuple[1] for _tuple in frame_and_translation_tuple_list]
+        return np.asarray(marker_translation_list).mean(0)
+
+    point_id = num_pose
+    for marker_id in visible_marker_id_list:
+        frame_and_translation_tuple_list = marker_bucket.get_frame_id_and_translation_by_id(marker_id)
+        marker_translation = get_mean_marker_position(frame_and_translation_tuple_list)
 
         vp = g2o.VertexSBAPointXYZ()
         vp.set_id(point_id)
         vp.set_marginalized(True)
-        vp.set_estimate(point + np.random.randn(3))
+        vp.set_estimate(marker_translation)
         optimizer.add_vertex(vp)
 
-        inlier = True
-        for j, z in visible:
-            if np.random.random() < args.outlier_ratio:
-                inlier = False
-                z = np.random.random(2) * [640, 480]
-            z += np.random.randn(2) * args.pixel_noise
+        for _tuple in frame_and_translation_tuple_list:
+            frame_id = _tuple[0]
+            translation = _tuple[1]
+            pose = poses[frame_id]
+            point_2d = cam.cam_map(translation)
+            is_valid = 0 <= point_2d[0] < image_size[0]  and 0 <= point_2d[1] < image_size[1]
+            if not is_valid:
+                continue
 
             edge = g2o.EdgeProjectXYZ2UV()
             edge.set_vertex(0, vp)
-            edge.set_vertex(1, optimizer.vertex(j))
-            edge.set_measurement(z)
+            edge.set_vertex(1, optimizer.vertex(frame_id))
+            edge.set_measurement(point_2d)
             edge.set_information(np.identity(2))
-            if args.robust_kernel:
-                edge.set_robust_kernel(g2o.RobustKernelHuber())
+            #if use_robust_kernel:
+            edge.set_robust_kernel(g2o.RobustKernelHuber())
 
             edge.set_parameter_id(0, 0)
             optimizer.add_edge(edge)
-
-        if inlier:
-            inliers[point_id] = i
-            error = vp.estimate() - true_points[i]
-            sse[0] += np.sum(error**2)
         point_id += 1
-    '''
 
     print('num vertices:', len(optimizer.vertices()))
     print('num edges:', len(optimizer.edges()))
@@ -135,14 +183,21 @@ def main(use_robust_kernel, use_dense, cfg_file_path, output_dir):
     print('Performing full BA:')
     optimizer.initialize_optimization()
     optimizer.set_verbose(True)
-    optimizer.optimize(10)
+    optimizer.optimize(300)
 
-
-    for i in inliers:
+    camera_points = []
+    for i in range(num_pose):
         vp = optimizer.vertex(i)
-        error = vp.estimate() - true_points[inliers[i]]
-        sse[1] += np.sum(error**2)
+        camera_points.append(vp.estimate())
 
+    marker_points = []
+    for i in range(n_visible_marker):
+        vp = optimizer.vertex(num_pose + i)
+        marker_points.append(vp.estimate())
+
+    pdb.set_trace()
+
+    '''
     print('\nRMSE (inliers only):')
     print('before optimization:', np.sqrt(sse[0] / len(inliers)))
     print('after  optimization:', np.sqrt(sse[1] / len(inliers)))
