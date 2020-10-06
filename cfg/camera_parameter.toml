@@ -54,3 +54,5 @@ range2 = -1
 rgb_image = 1
 width = 640
 height = 480
+width_rgb = 1920
+height_rgb = 1080

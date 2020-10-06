@@ -35,7 +35,7 @@ def read_and_detect(image_path_str, detector):
     return result
 
 
-def save_detection_result(detection_result, name, output_dir):
+def save_detection_result(detection_result, name, output_dir, camera_param):
     result_ary = np.c_[np.asarray(detection_result[0]), np.asarray(detection_result[1])]
     save_name = str(Path(output_dir, name))
     np.savetxt(save_name, result_ary)
@@ -53,7 +53,7 @@ def main(cfg_file_path, input_dir, output_dir, tag_size):
         base_name = base_name.replace('.png', '.csv')
         print(f"{i}/{n_data}")
         detection_result = read_and_detect(image_path_str, detector)
-        save_detection_result(detection_result, base_name, output_dir)
+        save_detection_result(detection_result, base_name, output_dir, camera_param)
 
 
 if __name__ == "__main__":

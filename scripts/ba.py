@@ -34,7 +34,7 @@ def initialize_camera_pose(optimizer, num_pose):
     poses = []
     for i in range(num_pose):
         # pose here means transform points from world coordinates to camera coordinates
-        pose = g2o.SE3Quat(np.identity(3), [i*0.04-1, 0, 0])
+        pose = g2o.SE3Quat(np.identity(3), [0, 0, 0])
         poses.append(pose)
 
         v_se3 = g2o.VertexSE3Expmap()
@@ -82,9 +82,10 @@ class DetectedMarkerEachFrame:
 
 def generate_detection_result_list(detection_result_path_str_list):
     marker_list_each_frame = []
-    for detection_result_path_str in detection_result_path_str_list:
+
+    for i, detection_result_path_str in enumerate(detection_result_path_str_list):
         result_ary = np.loadtxt(detection_result_path_str)
-        if len(result_ary) == 0:
+        if len(result_ary) <= 4:
             continue
         id_list = result_ary[:, 0].astype(np.int16)
         translation_array = result_ary[:, 1:]
@@ -145,6 +146,8 @@ def main(use_robust_kernel, use_dense, cfg_file_path, output_dir):
         marker_translation_list = [_tuple[1] for _tuple in frame_and_translation_tuple_list]
         return np.asarray(marker_translation_list).mean(0)
 
+    K = camera_param.intrinsic_matrix
+
     point_id = num_pose
     for marker_id in visible_marker_id_list:
         frame_and_translation_tuple_list = marker_bucket.get_frame_id_and_translation_by_id(marker_id)
@@ -160,7 +163,9 @@ def main(use_robust_kernel, use_dense, cfg_file_path, output_dir):
             frame_id = _tuple[0]
             translation = _tuple[1]
             pose = poses[frame_id]
-            point_2d = cam.cam_map(translation)
+            #point_2d = cam.cam_map(translation)
+            point_2d_tmp = translation @ K.T
+            point_2d = np.array([int(point_2d_tmp[0]/point_2d_tmp[2]), int(point_2d_tmp[1]/point_2d_tmp[2])])
             is_valid = 0 <= point_2d[0] < image_size[0]  and 0 <= point_2d[1] < image_size[1]
             if not is_valid:
                 continue
@@ -188,15 +193,15 @@ def main(use_robust_kernel, use_dense, cfg_file_path, output_dir):
     camera_points = []
     for i in range(num_pose):
         vp = optimizer.vertex(i)
-        camera_points.append(vp.estimate())
+        camera_points.append(vp.estimate().matrix())
 
     marker_points = []
     for i in range(n_visible_marker):
         vp = optimizer.vertex(num_pose + i)
         marker_points.append(vp.estimate())
 
-    pdb.set_trace()
 
+    pdb.set_trace()
     '''
     print('\nRMSE (inliers only):')
     print('before optimization:', np.sqrt(sse[0] / len(inliers)))
