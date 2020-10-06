@@ -4,6 +4,7 @@ import numpy as np
 from typing import List
 from collections import defaultdict
 from utils import set_camera_parameter
+from visualizer import PangolinVisualizer
 from pathlib import Path
 import argparse
 import pdb
@@ -200,8 +201,10 @@ def main(use_robust_kernel, use_dense, cfg_file_path, output_dir):
         vp = optimizer.vertex(num_pose + i)
         marker_points.append(vp.estimate())
 
+    visualizer = PangolinVisualizer()
+    visualizer.set_data_for_visualization(camera_points, marker_points)
+    visualizer.draw()
 
-    pdb.set_trace()
     '''
     print('\nRMSE (inliers only):')
     print('before optimization:', np.sqrt(sse[0] / len(inliers)))

@@ -4,3 +4,6 @@
 [submodule "g2opy"]
 	path = g2opy
 	url = https://github.com/uoip/g2opy.git
+[submodule "pangolin"]
+	path = pangolin
+	url = https://github.com/yuki-inaho/pangolin.git

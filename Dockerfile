@@ -12,7 +12,7 @@ RUN sed -i -r 's|(archive\|security)\.ubuntu\.com/|ftp.jaist.ac.jp/pub/Linux/|' 
     libswscale-dev wget autoconf automake unzip curl libeigen3-dev \
     python-dev python-pip libavcodec-dev libavformat-dev libgtk2.0-dev libv4l-dev usbutils \
     libhdf5-100 libhdf5-cpp-100 hdf5-tools hdf5-helpers libhdf5-dev libhdf5-doc \
-    python3-tk python3-pip tk-dev libv4l-dev libqglviewer-dev-qt4 libsuitesparse-dev && \
+    python3-tk python3-pip tk-dev libv4l-dev libqglviewer-dev-qt4 libsuitesparse-dev libglew-dev && \
     # SDK dependency
     add-apt-repository ppa:nilarimogard/webupd8 && \
     apt-get update && apt-get install -y libvdpau-va-gl1 i965-va-driver vdpauinfo libvdpau-dev python-tk && \
