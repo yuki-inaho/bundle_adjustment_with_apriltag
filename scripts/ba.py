@@ -1,5 +1,6 @@
 import toml
 import g2o
+import cv2
 import numpy as np
 from typing import List
 from collections import defaultdict
@@ -20,6 +21,8 @@ def parse_args():
     parser.add_argument('--dense', '-d', action='store_true', help='use dense solver')
     parser.add_argument('--cfg-file', '-c', type=str, default=f'{PARENT_DIR}/cfg/camera_parameter.toml', \
                         help='location of a camera parameter file')
+    parser.add_argument('--input-dir', '-i', type=str, default=f'{PARENT_DIR}/data', \
+                        help='location of captured color images')
     parser.add_argument('--output-dir', '-o', type=str, default=f'{PARENT_DIR}/detected', \
                         help='location to save apriltag detected results')
     args = parser.parse_args()
@@ -83,6 +86,8 @@ class DetectedMarkerEachFrame:
 
 def generate_detection_result_list(detection_result_path_str_list):
     marker_list_each_frame = []
+    frame_name_list = []
+    detection_result_path_str_list = np.sort(detection_result_path_str_list)
 
     for i, detection_result_path_str in enumerate(detection_result_path_str_list):
         result_ary = np.loadtxt(detection_result_path_str)
@@ -92,7 +97,8 @@ def generate_detection_result_list(detection_result_path_str_list):
         translation_array = result_ary[:, 1:]
         marker_list = [DetectedMarker(tid, translation_array[i,:]) for i, tid in enumerate(id_list)]
         marker_list_each_frame.append(marker_list)
-    return marker_list_each_frame
+        frame_name_list.append(str(Path(detection_result_path_str).name))
+    return marker_list_each_frame, frame_name_list
 
 class MarkerBucket:
     def __init__(self, marker_list_each_frame, visible_marker_id_list):
@@ -114,8 +120,15 @@ class MarkerBucket:
         return self._visible_frame_and_translation_per_marker[marker_id]
 
 
-def main(use_robust_kernel, use_dense, cfg_file_path, output_dir):
+def read_images(input_dir):
+    image_path_str_list = [str(pt) for pt in list(Path(input_dir).glob("*.png"))]
+    images = [cv2.imread(image_path_str) for image_path_str in image_path_str_list]
+    return images
+
+
+def main(use_robust_kernel, use_dense, cfg_file_path, input_dir, output_dir):
     toml_dict = toml.load(open(cfg_file_path))
+    color_images = read_images(input_dir)
     camera_param = set_camera_parameter(toml_dict)
 
     optimizer = g2o.SparseOptimizer()
@@ -131,7 +144,7 @@ def main(use_robust_kernel, use_dense, cfg_file_path, output_dir):
     optimizer.add_parameter(cam)
 
     detection_result_path_str_list = [str(pt) for pt in list(Path(output_dir).glob("*.csv"))]
-    marker_list_each_frame = generate_detection_result_list(detection_result_path_str_list)
+    marker_list_each_frame, frame_name_list = generate_detection_result_list(detection_result_path_str_list)
     visible_marker_id_list = get_visible_marker_id_list(marker_list_each_frame)
 
     n_visible_marker = len(visible_marker_id_list)
@@ -205,6 +218,13 @@ def main(use_robust_kernel, use_dense, cfg_file_path, output_dir):
     visualizer.set_data_for_visualization(camera_points, marker_points)
     visualizer.draw()
 
+
+    camera_pose_ary = np.asarray(camera_points).reshape(-1, 16)
+    frame_name_ary = np.asarray(frame_name_list)[:,np.newaxis]
+    np.savetxt(f"{PARENT_DIR}/camera_pose_ary.csv", camera_pose_ary)
+    np.savetxt(f"{PARENT_DIR}/markers.csv", marker_points)
+    np.savetxt(f"{PARENT_DIR}/frame_name_list.csv", frame_name_ary, fmt="%s")
+
     '''
     print('\nRMSE (inliers only):')
     print('before optimization:', np.sqrt(sse[0] / len(inliers)))
@@ -214,4 +234,4 @@ def main(use_robust_kernel, use_dense, cfg_file_path, output_dir):
 
 if __name__ == '__main__':
     args = parse_args()
-    main(args.robust, args.dense, args.cfg_file, args.output_dir)
+    main(args.robust, args.dense, args.cfg_file, args.input_dir, args.output_dir)
