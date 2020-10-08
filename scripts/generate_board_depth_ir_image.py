@@ -1,7 +1,13 @@
 import numpy as np
 import cv2
 from pathlib import Path
-from utils import set_camera_parameter, set_ir_camera_parameter, colorize_depth_img
+from utils import (
+    set_camera_parameter,
+    set_ir_camera_parameter,
+    colorize_depth_img,
+    get_undistortion_module,
+    undistortion
+)
 import toml
 import argparse
 import pdb
@@ -65,8 +71,10 @@ def projection(color_image, marker_points, camera_pose, camera_pose_pre, camera_
     camera_pose = camera_pose_pre @ camera_pose
     points_extd = np.c_[marker_points, np.repeat(1, marker_points.shape[0])]
     points_tfm = points_extd @ camera_pose.T[:, :3]
-    #points_tfm[:,[0,1]] *= 1.2075
-    points_tfm *= 0.039/0.03866119
+    points_tfm[:,[0,1]] *= 1.2075
+    points_tfm *= 0.039/0.03206
+    #D = np.sqrt(np.square(points_tfm[..., np.newaxis, :] - points_tfm).sum(axis=-1))
+    #np.sort(D[:, 0])[:10]
 
     plane_coefficients, plane_origin = calculate_plane_coefficients(points_tfm)
 
@@ -108,6 +116,7 @@ def main(cfg_file_path, color_input_dir, depth_input_dir, output_dir):
     frame_name_ary = np.loadtxt(f"{PARENT_DIR}/frame_name_list.csv", dtype = "unicode")
     color_images = read_images(color_input_dir, frame_name_ary)
     depth_images = read_images(depth_input_dir, frame_name_ary, is_uc16=True)
+    undistorter = get_undistortion_module(toml_dict, str(Path(cfg_file_path).parent))
 
     camera_pose_pre = np.eye(4)
     n_images = len(color_images)
@@ -119,13 +128,19 @@ def main(cfg_file_path, color_input_dir, depth_input_dir, output_dir):
             image, marker_points, camera_pose, camera_pose_pre, camera_param
         )
         cv2.imwrite(f"{PARENT_DIR}/test.png", plane_depth_colorized)
-        depth_image = depth_images[i]
-        depth_image[plane_depth == 0] = 0
+        depth_input = depth_images[i]
+
+        depth_input[depth_input == 65535] = 0
+        depth_image = undistortion(depth_input, camera_param, undistorter)
+        #depth_image = depth_input
+
         diff = depth_image.astype(float) - plane_depth.astype(float)
         diff_abs = np.abs(diff).astype(np.int16)
         diff_colorized = colorize_depth_img(diff_abs)
-        diff_ext = diff[diff>0]
+        diff_colorized[plane_depth==0] = 0
+        diff_ext = diff[plane_depth!=0]
         depth_image[plane_depth==0] = 0
+
         cv2.imwrite(f"{PARENT_DIR}/diff/{i}.png", diff_colorized)
         cv2.imwrite(f"{PARENT_DIR}/board/{i}.png", colorize_depth_img(plane_depth))
         cv2.imwrite(f"{PARENT_DIR}/raw/{i}.png", colorize_depth_img(depth_image))

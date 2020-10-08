@@ -11,3 +11,6 @@ cd .. && python setup.py install
 mkdir -p /app/pangolin/build && cd /app/pangolin/build
 cmake .. && make -j8
 cd .. && python setup.py install
+
+cd /app/undistortion
+python setup.py install

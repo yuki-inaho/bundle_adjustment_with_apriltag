@@ -190,7 +190,7 @@ def main(use_robust_kernel, use_dense, cfg_file_path, input_dir, output_dir):
             edge.set_measurement(point_2d)
             edge.set_information(np.identity(2))
             #if use_robust_kernel:
-            edge.set_robust_kernel(g2o.RobustKernelHuber())
+            #edge.set_robust_kernel(g2o.RobustKernelHuber())
 
             edge.set_parameter_id(0, 0)
             optimizer.add_edge(edge)

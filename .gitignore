@@ -1,6 +1,14 @@
 data/
 detected/
 depth/
+raw/
+diff/
+board/
 .vscode/
 scripts/__pycache__/
 projected/
+undistortion/undistortion_module_pywrapper.egg-info/
+undistortion/undistortion_module_pywrapper.cpp
+undistortion/undistortion_module_pywrapper.cpython-36m-x86_64-linux-gnu.so
+undistortion/build
+undistortion/dist

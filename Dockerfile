@@ -25,13 +25,14 @@ RUN pip install --upgrade pip && \
     pip install cython==0.29.20 numpy==1.16.0
 
 WORKDIR /app
-ENV OPENCV_VERSION="3.4.10"
+ENV OPENCV_VERSION="3.4.11"
 RUN mkdir -p /app/opencv-$OPENCV_VERSION/build
-RUN curl -L https://github.com/opencv/opencv/archive/$OPENCV_VERSION.tar.gz | tar xz
+RUN curl -L https://github.com/opencv/opencv/archive/$OPENCV_VERSION.tar.gz | tar xz && curl -L https://github.com/opencv/opencv_contrib/archive/$OPENCV_VERSION.tar.gz | tar xz
 
 WORKDIR /app/opencv-$OPENCV_VERSION/build
 RUN cmake -DWITH_TBB=OFF \
     -DBUILD_TESTS=OFF \
+    -DOPENCV_EXTRA_MODULES_PATH=../../opencv_contrib-$OPENCV_VERSION/modules \
     -DBUILD_PERF_TESTS=OFF \
     -DCMAKE_BUILD_TYPE=RELEASE \
     -DCMAKE_INSTALL_PREFIX=/usr/local \
