@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 from pathlib import Path
-from utils import set_camera_parameter, colorize_depth_img
+from utils import set_camera_parameter, set_ir_camera_parameter, colorize_depth_img
 import toml
 import argparse
 import pdb
@@ -23,19 +23,24 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg-file', '-c', type=str, default=f'{PARENT_DIR}/cfg/camera_parameter.toml', \
                         help='location of a camera parameter file')
-    parser.add_argument('--input-dir', '-i', type=str, default=f'{PARENT_DIR}/data', \
+    parser.add_argument('--color-input-dir', '-ic', type=str, default=f'{PARENT_DIR}/data', \
                         help='location of captured color images')
+    parser.add_argument('--depth-input-dir', '-id', type=str, default=f'{PARENT_DIR}/depth', \
+                        help='location of captured depth images')
     parser.add_argument('--output-dir', '-o', type=str, default=f'{PARENT_DIR}/projected', \
                         help='location to save projection images')
     args = parser.parse_args()
     return args
 
 
-def read_images(input_dir, frame_name_ary):
+def read_images(input_dir, frame_name_ary, is_uc16=False):
     images = []
     for frm_name in frame_name_ary:
         image_name = str(Path(input_dir, frm_name.replace(".csv", ".png")).resolve())
-        images.append(cv2.imread(image_name))
+        if is_uc16:
+            images.append(cv2.imread(image_name, cv2.IMREAD_ANYDEPTH))
+        else:
+            images.append(cv2.imread(image_name))
     return images
 
 
@@ -60,6 +65,8 @@ def projection(color_image, marker_points, camera_pose, camera_pose_pre, camera_
     camera_pose = camera_pose_pre @ camera_pose
     points_extd = np.c_[marker_points, np.repeat(1, marker_points.shape[0])]
     points_tfm = points_extd @ camera_pose.T[:, :3]
+    #points_tfm[:,[0,1]] *= 1.2075
+    points_tfm *= 0.039/0.03866119
 
     plane_coefficients, plane_origin = calculate_plane_coefficients(points_tfm)
 
@@ -76,37 +83,57 @@ def projection(color_image, marker_points, camera_pose, camera_pose_pre, camera_
     cx, cy = camera_param.center
     u_idx = (x_idx - cx).astype(np.float)/fx
     v_idx = (y_idx - cy).astype(np.float)/fy
-    uve = np.c_[u_idx, v_idx, np.repeat(1, u_idx.shape[0])]
 
-    z_var = (plane_coefficients @ plane_origin)/(uve @ plane_coefficients)
+    uve = np.c_[u_idx, v_idx, np.repeat(1, u_idx.shape[0])]
+    z_var = (plane_coefficients @ plane_origin)/(uve @ plane_coefficients) + 0.032
+    # residual = (np.c_[u_idx*z_var, v_idx*z_var, z_var]  - plane_origin) @ plane_coefficients
+
     z_var_int16 = (z_var * 1000).astype(np.int16)
     plane_depth = np.zeros([color_image.shape[0], color_image.shape[1]], dtype=np.int16)
     plane_depth[y_idx, x_idx] = z_var_int16
+
+    gray_image = cv2.cvtColor(color_image, cv2.COLOR_RGB2GRAY)
+    ret2,th_image = cv2.threshold(gray_image, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+    plane_depth[th_image==0] = 0
     plane_depth_colorized = colorize_depth_img(plane_depth)
+    return plane_depth, plane_depth_colorized
 
-    return plane_depth_colorized
 
-
-def main(cfg_file_path, input_dir, output_dir):
+def main(cfg_file_path, color_input_dir, depth_input_dir, output_dir):
     toml_dict = toml.load(open(cfg_file_path))
-    camera_param = set_camera_parameter(toml_dict)
+    camera_param = set_ir_camera_parameter(toml_dict)
 
     camera_pose_ary = np.loadtxt(f"{PARENT_DIR}/camera_pose_ary.csv")
     marker_points = np.loadtxt(f"{PARENT_DIR}/markers.csv")
     frame_name_ary = np.loadtxt(f"{PARENT_DIR}/frame_name_list.csv", dtype = "unicode")
-    color_images = read_images(input_dir, frame_name_ary)
+    color_images = read_images(color_input_dir, frame_name_ary)
+    depth_images = read_images(depth_input_dir, frame_name_ary, is_uc16=True)
 
     camera_pose_pre = np.eye(4)
     n_images = len(color_images)
+    diffs = []
     for i, image in enumerate(color_images):
         print(f"{i}/{n_images}")
         camera_pose = camera_pose_ary[i, :].reshape(4,4)
-        plane_depth_colorized = projection(image, marker_points, camera_pose, camera_pose_pre, camera_param)
+        plane_depth, plane_depth_colorized = projection(
+            image, marker_points, camera_pose, camera_pose_pre, camera_param
+        )
         cv2.imwrite(f"{PARENT_DIR}/test.png", plane_depth_colorized)
+        depth_image = depth_images[i]
+        depth_image[plane_depth == 0] = 0
+        diff = depth_image.astype(float) - plane_depth.astype(float)
+        diff_abs = np.abs(diff).astype(np.int16)
+        diff_colorized = colorize_depth_img(diff_abs)
+        diff_ext = diff[diff>0]
+        depth_image[plane_depth==0] = 0
+        cv2.imwrite(f"{PARENT_DIR}/diff/{i}.png", diff_colorized)
+        cv2.imwrite(f"{PARENT_DIR}/board/{i}.png", colorize_depth_img(plane_depth))
+        cv2.imwrite(f"{PARENT_DIR}/raw/{i}.png", colorize_depth_img(depth_image))
         cv2.waitKey(10)
-        pdb.set_trace()
 
+        #diffs.extend(diff_ext)
+    #hist = np.histogram(diffs)
 
 if __name__ == '__main__':
     args = parse_args()
-    main(args.cfg_file, args.input_dir, args.output_dir)
+    main(args.cfg_file, args.color_input_dir, args.depth_input_dir, args.output_dir)

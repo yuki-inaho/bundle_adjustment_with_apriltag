@@ -59,6 +59,7 @@ def projection(color_image, marker_points, camera_pose, camera_pose_pre, camera_
     projected_image = draw_points(projected_image, pts_2d, color="orange", radius=7)
     return projected_image
 
+
 def main(cfg_file_path, input_dir, output_dir):
     fmt = cv2.VideoWriter_fourcc('m', 'p', '4', 'v') # ファイル形式(ここではmp4)
     writer = cv2.VideoWriter(f'{PARENT_DIR}/projected_images.mp4', fmt, 4, (1280, 720)) # ライター作成
@@ -85,6 +86,7 @@ def main(cfg_file_path, input_dir, output_dir):
         writer.write(projected_image_resized)
         cv2.waitKey(10)
     writer.release()
+
 
 if __name__ == '__main__':
     args = parse_args()

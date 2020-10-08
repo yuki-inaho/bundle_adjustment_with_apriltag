@@ -1,4 +1,6 @@
 data/
 detected/
+depth/
 .vscode/
 scripts/__pycache__/
+projected/
